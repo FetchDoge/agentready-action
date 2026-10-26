@@ -1,0 +1,79 @@
+name: 'AgentReady Scan'
+description: 'Score how well AI agents can read, cite, and operate a website — 15 checks, 93 weighted points, evidence for every verdict.'
+author: 'Marcus Richards (FetchDoge)'
+branding:
+  icon: 'search'
+  color: 'blue'
+
+inputs:
+  url:
+    description: 'Public website URL to scan (https://example.com)'
+    required: true
+  top:
+    description: 'Show only the top N failing checks in the report (default: all)'
+    required: false
+    default: ''
+  timeout-ms:
+    description: 'Per-request timeout in milliseconds'
+    required: false
+    default: '12000'
+  fail-below:
+    description: 'Fail this step if the score is below this threshold (leave empty to never fail on score)'
+    required: false
+    default: ''
+  comment-on:
+    description: 'Reserved for a future release: post the report as a comment (issue | pr | none). Currently the report always lands in the step summary and the uploaded artifact.'
+    required: false
+    default: 'none'
+
+outputs:
+  score:
+    description: 'Agent-readiness score, 0–100'
+    value: ${{ steps.scan.outputs.score }}
+  grade:
+    description: 'Letter grade for the score (A–F)'
+    value: ${{ steps.scan.outputs.grade }}
+  earned:
+    description: 'Weighted points earned out of 93'
+    value: ${{ steps.scan.outputs.earned }}
+  report-json:
+    description: 'Path to the JSON report inside the uploaded agentready-out artifact'
+    value: ${{ steps.scan.outputs.report-json }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+
+    # The scanner stays the single source of truth. This pin is an immutable
+    # commit SHA — never floating main. Scanner repo: FetchDoge/agentready.
+    # No scanner release/tag exists yet (checked 2026-10-22: tags [] , releases []),
+    # so the pin is the verified main commit; bump it in one commit per scanner release.
+    - name: Check out the pinned AgentReady scanner
+      uses: actions/checkout@v7
+      with:
+        repository: FetchDoge/agentready
+        ref: '345705a2f29ffa8bc32b64d29d26733ada9c08c7'
+        path: _agentready-scanner
+
+    - name: Run AgentReady scan
+      id: scan
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_TOP: ${{ inputs.top }}
+        INPUT_TIMEOUT_MS: ${{ inputs.timeout-ms }}
+        INPUT_FAIL_BELOW: ${{ inputs.fail-below }}
+        SCANNER_DIR: ${{ github.workspace }}/_agentready-scanner
+      run: node "${{ github.action_path }}/run-scan.mjs"
+
+    - name: Upload the scan report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: agentready-report
+        path: agentready-out/
+        if-no-files-found: ignore
